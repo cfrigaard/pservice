@@ -5,6 +5,7 @@
 #     version 0.0: initial
 #     version 0.1: removed external dependencies to local developer files
 #     version 0.2: cleanup, published
+#     version 0.3: cleaned up keyboard Ctrl-C handling
 
 import os
 import sys
@@ -98,7 +99,7 @@ def main():
 
 				return output, retval
 			except Exception as ex:
-				ERR(f"encountered unexpected exceptionion SysCallPrimitive(cmd='{cmd}', ..), exception='{ex}'")
+				ERR(f"encountered unexpected exception SysCallPrimitive(cmd='{cmd}', ..), exception='{ex}'")
 				return "", -1
 				
 		def ParseSystemCtl(output_r, filter_out):
@@ -220,7 +221,7 @@ def main():
 			print(f"{prefix}[{index}]: result={r}, done")
 
 		assert isinstance(output, list)
-		assert isinstance(r, int) and r>=-1
+		assert isinstance(r, int) and r>=-2, f"type of r expected to be int, but is is '{type(r)}' with value '{r}'"
 
 		assert index <= len(results)
 		assert results[index]=="N/A"
@@ -319,5 +320,7 @@ def main():
 if __name__ == '__main__':
 	try:
 		main()
+	except KeyboardInterrupt as _:
+		ERR("interrupted by keyboard Ctld-C, aborted")
 	except Exception as e:
 		ERR(f"exception occured {e} ({type(e)})")
