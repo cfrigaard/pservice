@@ -26,6 +26,7 @@ monitor, using colors, and only showing running services
 
 ```
 > ./pservice.py -c -s -r
+rgb(0,255,0)
  [ + ]  accounts-daemon
  [ + ]  acpid
  [ + ]  bluetooth
