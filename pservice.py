@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+# NOTE a parallel service shell
+#   History:
+#     version 0.0: initial
+#     version 0.1: removed external dependencies to local developer files
+#     version 0.2: cleanup, published
+
 import os
 import sys
 import subprocess
@@ -24,18 +30,18 @@ def InitFiles(initdir):
 def main():
 
 	def AddCol(msg, addcols, col):
-		BLUE     ="\033[0;34m"
-		LBLUE    ="\033[1;34m"
+		#BLUE     ="\033[0;34m"
+		#LBLUE    ="\033[1;34m"
 		RED      ="\033[0;31m"
 		LRED     ="\033[1;31m"
 		GREEN    ="\033[0;32m"
 		LGREEN   ="\033[1;32m"
 		YELLOW   ="\033[0;33m"
 		LYELLOW  ="\033[1;33m"
-		PURPLE   ="\033[0;35m"
-		LPURPLE  ="\033[1;35m"
+		#PURPLE   ="\033[0;35m"
+		#LPURPLE  ="\033[1;35m"
 		CYAN     ="\033[0;36m"
-		LCYAN    ="\033[1;36m"
+		#LCYAN    ="\033[1;36m"
 		NC       ="\033[0m"
 
 		if addcols:
@@ -59,9 +65,9 @@ def main():
 
 		return msg
 
-	def ServiceStatus(index, servicename, initdir, servicemode, debug, isthreaded):
+	def ServiceStatus(index, servicename, initdir, servicemode, debug, isthreaded, filter_out=None):
 
-		def SysCallPrimitive(cmd, quiet=False, debug=False, checkretval=False):
+		def SysCallPrimitive(cmd, quiet=False, checkretval=False):
 			try:
 				o = subprocess.getstatusoutput(cmd)
 
@@ -73,9 +79,6 @@ def main():
 				#output = str(o[1]).split("\n")
 
 				retval = o[0]
-				output = o[1].split("\n")
-
-				oetval = o[0]
 				output = o[1].split("\n")
 
 				assert isinstance(retval, int)
@@ -94,15 +97,16 @@ def main():
 					ERR(f"encountered retval!=0 in SysCallPrimitive(cmd='{cmd}', ..) {o[1]}")
 
 				return output, retval
-			except Exception as e:
-				ERR(f"encountered unexpected exceptionion SysCallPrimitive(cmd='{cmd}', ..), exception='{e}'")
-
-		def ParseSystemCtl(output_r):
+			except Exception as ex:
+				ERR(f"encountered unexpected exceptionion SysCallPrimitive(cmd='{cmd}', ..), exception='{ex}'")
+				return "", -1
+				
+		def ParseSystemCtl(output_r, filter_out):
 			def TrimWhite(s):
 				r = ""
 				w = True
 				for i in s:
-					if i==" " or i=="\t":
+					if i in [" ", "\t"]:
 						if not w:
 							r += i
 						w = True
@@ -111,6 +115,12 @@ def main():
 						w = False
 				#print(f"s='{s}'\nr='{r}'")
 				return r
+				
+			def FilterOutIrrelevantServices(s, filter_out):
+				for i in filter_out:
+					if s.find(i)==0:
+						return False
+				return True
 					
 			assert isinstance(output_r, tuple) and len(output_r)==2
 			
@@ -149,7 +159,7 @@ def main():
 					#	WARN(f"unexpected systemctl status '{v}'")
 
 					if v.find("loaded active exited")==0:
-						c = 3
+						c = 1
 					elif v.find("loaded inactive exited")==0:
 						c = 3
 					elif v.find("loaded active running")==0:
@@ -160,16 +170,25 @@ def main():
 						c = -2
 					elif v.find("masked inactive dead")==0:
 						c = -2
+					elif v.find("loaded failed")==0:
+						c = -2
+					elif v.find("not-found failed")==0:
+						c = -2
 					else:
 						WARN(f"unexpected systemctl status '{v}'")
 					
-					#print(f"k={k}, c={c}, v={v}")
+					if debug:
+						print(f"k={k}, c={c}, v={v}")
 					
 					if c>=0:
-						files.append(s)
-						results[k] = ([s], c)
-						k += 1
-
+						if FilterOutIrrelevantServices(s, filter_out):	
+							files.append(s)
+							results[k] = ([s], c)
+							k += 1
+				else:
+					pass
+					#WARN(i)
+					
 			#print(results)
 			return files, results
 			
@@ -191,7 +210,7 @@ def main():
 			cmd = "service " + servicename + " status"
 		elif servicemode==2:
 			cmd = "systemctl list-units --all --type=service --no-pager"
-			return ParseSystemCtl(SysCallPrimitive(cmd, quiet=not debug))
+			return ParseSystemCtl(SysCallPrimitive(cmd, quiet=not debug), filter_out)
 		else:
 			ERR("funhandeled servicemode={servicemode}")
 
@@ -210,14 +229,15 @@ def main():
 
 	initd = "/etc/init.d"
 	parser = argparse.ArgumentParser()
-	parser.add_argument("-v",          default = 0,      action="count",      help="increase output verbosity, default=0\n")
-	parser.add_argument("-c",          default = False,  action="store_true", help="add colors, default=False\n")
-	parser.add_argument("-r",          default = False,  action="store_true", help="only show running services, default=False\n")
-	parser.add_argument("-initd",      default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service'/'systemctl', default=False\n")
-	parser.add_argument("-systemctl",  default = False,  action="store_true", help="use 'systemctl' command instead of'service' directly, default=False\n")	
-	parser.add_argument("-nonthreaded",default = False,  action="store_true", help="do not use threading for speedup, default=False\n")
-	parser.add_argument("-debug",      default = False,  action="store_true", help="debug print default=False\n")
-	parser.add_argument("-initdir",    default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
+	parser.add_argument("-v",          		default = 0,      action="count",      help="increase output verbosity, default=0\n")
+	parser.add_argument("-c",          		default = False,  action="store_true", help="add colors, default=False\n")
+	parser.add_argument("-r",          		default = False,  action="store_true", help="only show running services, default=False\n")
+	parser.add_argument("-i", "--initd",   	default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service'/'systemctl', default=False\n")
+	parser.add_argument("-s","--systemctl",	default = False,  action="store_true", help="use 'systemctl' command instead of'service' directly, default=False\n")	
+	parser.add_argument("-f","--filter",	default = False,  action="store_true", help="ignore irrelevant services in  'systemctl' mode, default=False\n")	
+	parser.add_argument("-nonthreaded",		default = False,  action="store_true", help="do not use threading for speedup, default=False\n")
+	parser.add_argument("-debug",      		default = False,  action="store_true", help="debug print default=False\n")
+	parser.add_argument("-initdir",    		default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
 	args = parser.parse_args()
 
 	initdir= args.initdir
@@ -238,12 +258,16 @@ def main():
 	if servicemode==0:
 		WARN(f"calling '{initd}' may not produce the right status for services")
 		
+	if verbose:
+		WARN("vebose flag still unused in code")
+
 	results = {}
 	threads = {}
 
 	if servicemode==2:
 		nonthread = True
-		files, results = ServiceStatus(0, "N/A", initdir, servicemode, debug, False)
+		f = ["user@", "getty@", "user-runtime-dir@", "systemd-fsck@", "systemd-"] if args.filter else []
+		files, results = ServiceStatus(0, "N/A", initdir, servicemode, debug, False, f)
 		n = len(results)
 	else:
 		for i in range(n):
@@ -281,7 +305,7 @@ def main():
 		if r==0:
 			s = AddCol("+", addcols, "lgreen")
 		elif r==1:
-			s = AddCol("1", addcols, "lyellow")
+			s = AddCol("*", addcols, "green")
 		elif r==2:
 			s = AddCol("2", addcols, "lyellow")
 		elif r==3:
