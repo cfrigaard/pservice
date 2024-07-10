@@ -72,8 +72,8 @@ services you have running) takes one to several seconds.  Running in parallel
 mode brings this down, to typically under a second (0.5 seconds or so).
 
 Running `systemctl` is normally somewhat faster than the old `service` and
-will be done in a second or little less than a second, and `pservice` brings
-this down to around 0.1 seconds. 
+will be done in less than a second (0.8 seconds on my system) , and
+`pservice` brings this down to around 0.1 seconds.
 
 # A note on `/etc/init.d' and `systemctl`
 
