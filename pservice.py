@@ -159,7 +159,7 @@ def main():
 					#	WARN(f"unexpected systemctl status '{v}'")
 
 					if v.find("loaded active exited")==0:
-						c = 1
+						c = 1 # change to 0 if active but exited services should be marked as running
 					elif v.find("loaded inactive exited")==0:
 						c = 3
 					elif v.find("loaded active running")==0:

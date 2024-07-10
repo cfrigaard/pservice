@@ -21,12 +21,12 @@ Simply call `pservice.py` instead of `service --status-all`
  [ - ]  x11-common
 ```
 
+
 or if `systemctl list-units --all --type=service` is your prefered service
-monitor, using colors, and only showing running services
+monitor, using colors (not shown in the output below), and only showing running services
 
 ```
 > ./pservice.py -c -s -r
-rgb(0,255,0)
  [ + ]  accounts-daemon
  [ + ]  acpid
  [ + ]  bluetooth
@@ -101,6 +101,8 @@ systemctl list-units --all --type=service
 is not equal to the `service`s mode before, since there are differences in
 the amount of services visible from the two subsystem.
 
+# A note on active but exited services 
+
 Furthermore, there may be subtle differences in calling `/etc/init.d/`
 individual via
 
@@ -108,4 +110,37 @@ individual via
 service --status-all
 ```
 
-compared to running a status on an individual service.
+compared to running a status on an individual service. This is due to the
+interpretation of the status of loaded, activated and then exited services,
+that in `pservice` is reported as not running. You can change this behaviour
+in `pservice.py' by changing `c = 1` to `c = 0` in the line
+
+```
+  if v.find("loaded active exited")==0:
+  	c = 1 # change to 0 if active but exited services should be marked as running
+```
+
+In particular the `console-setup.sh` and the `keyboard-setup.sh` produce
+different status when being called via `services` or `pservice.py` (see also
+the function ShowDiffs in `demo.sh`)
+
+```
+service --status-all > service_status_all.txt
+pservice             > pservice_status_all.txt
+
+diff -dw service_status_all.txt pservice_status_all.txt
+
+``` 
+
+producing the output
+
+````
+8c8
+<  [ - ]  console-setup.sh
+---
+>  [ + ]  console-setup.sh
+18c18
+<  [ - ]  keyboard-setup.sh
+---
+>  [ + ]  keyboard-setup.sh
+```
