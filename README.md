@@ -93,14 +93,14 @@ TIMING: (needs a tictoc timer)..
 # Using `init.d` or `systemd`
 
 The classical daemon handler was 'sysvinit' (or SysV) with all the shell scripts
-places in `/etc/init.d/'. This service handler is simple, yet slow, due to
+placed in `/etc/init.d/'. This service handler is simple, yet slow, due to
 the sequential handling of servicecall.
 
 The modern deamon handler is the 'systemd', but the shell interface for the
 `systemctl` is not as easy to remember and easy to interpret, as the
-`service` shell command: normal operation could be to just get all services,
-but you need to remember, make an alias, or a small script file for doing
-this in the `systemd`-world.
+`service` shell command: normal operation is to get all services, but you
+need to remember, make an alias, or a small script file for doing this in
+the `systemd`-world.
 
 ## A note on `/etc/init.d' and `systemctl` differences
 
@@ -148,7 +148,7 @@ in `pservice.py' by changing `c = 1` to `c = 0` in the line
 ```
 
 In particular the `console-setup.sh` and the `keyboard-setup.sh` produce
-different status when being called via `services` or `pservice.py` (see also
+different statuses when being called via `services` or `pservice.py` (see also
 the function ShowDiffs in `demo.sh`)
 
 ```
