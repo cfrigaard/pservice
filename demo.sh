@@ -46,23 +46,25 @@ function ShowConsoleStatus()
 
 function Demos()
 {
-
 	echo "DEMO: pservice demo, normal operation.."
 
 	pservice.py
 
-	echo "with colors.."
+	echo "with no colors only using systemctl"
 
-	pservice.py -c
+	pservice.py -nc -s
 
 	echo "DEMO: using systemctl instead of /etc/init.d/ .."
 
-	pservice.py -c -s
+	pservice.py -s
 
 	echo "DEMO: and showing only running services.."
 
-	pservice.py -c -s -r
+	pservice.py -s -x
 
+	echo "DEMO: showing all services for both /etc/init.d/ and systemctl.."
+
+	pservice.py -a
 }
 
 Demos

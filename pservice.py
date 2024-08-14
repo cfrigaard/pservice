@@ -18,7 +18,7 @@ import argparse
 
 #from functools import cmp_to_key
 from collections import namedtuple
-from typing import Any, Iterable, Mapping, MutableMapping, NoReturn, Sequence
+from typing import Any, Mapping, NoReturn, Sequence # Iterable,  MutableMapping
 
 ###############################################################################
 
@@ -435,8 +435,9 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 				printretval = ""
 				if g_verbose > 1:
 					v = f" 'unknown' ({r})"
-					if r in _RESULT_STATUS.keys():
-						v = _RESULT_STATUS[r]
+					g =_RESULT_STATUS.get(r)
+					if g is not None:
+						v = g
 					printretval = ", '" + v + "'"
 				match srv:
 					case 0:
@@ -511,11 +512,10 @@ def main() -> None:
 	parser.add_argument("-a",  "--showall",     default = False,  action="store_true", help="show all services, both active and inactive, default=False\n")
 	parser.add_argument("-b",  "--both",        default = False,  action="store_true", help="show both sysv and systemd services, default=False\n")
 	parser.add_argument("-d",  "--debug",       default = False,  action="store_true", help="debug print default=False\n")
-	parser.add_argument("-c",  "--coloradd",    default = False,  action="store_true", help="add colors, default=False\n")
+	parser.add_argument("-nc", "--nocolors",    default = False,  action="store_true", help="disable print with colors, default=False\n")
 	parser.add_argument("-f",  "--filter",      default = False,  action="store_true", help="ignore irrelevant services in  'systemctl' mode, default=False\n")
 	parser.add_argument("-x",  "--hideexited",  default = False,  action="store_true", help="hide active but exited services, default=False\n")
 	parser.add_argument("-n",  "--nonthreaded", default = False,  action="store_true", help="do not use threading for speedup, default=False\n")
-	#parser.add_argument("-r",  "--runningonly", default = False,  action="store_true", help="only show running services, default=False\n")
 	parser.add_argument("-s",  "--systemctl",   default = False,  action="store_true", help="use 'systemctl' command instead of'service' directly, default=False\n")
 	parser.add_argument("-v",  "--verbose",     default = 0,      action="count",      help="increase output verbosity, default=0\n")
 	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service'/'systemctl', default=False\n")
@@ -526,7 +526,7 @@ def main() -> None:
 		
 	g_verbose     = args.verbose
 	g_debug_level = args.debug
-	g_addcols     = args.coloradd
+	g_addcols     = not args.nocolors
 	
 	initdir       = args.initdir
 	bothmode      = args.both
@@ -534,9 +534,6 @@ def main() -> None:
 	filterout : list[str] = ["user@", "getty@", "user-runtime-dir@", "systemd-fsck@", "systemd-"] if args.filter else []
 
 	if args.showall:
-		if args.runningonly:
-			ERR("you can not specify both --runningonly and --showall")
-
 		if args.hideexited:
 			ERR("you can not specify both --hideexited and --showall")
 	
