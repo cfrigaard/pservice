@@ -86,12 +86,15 @@ def AddCol(msg: str, col: str) -> str:
 
 	return msg
 
+
 def PrintV(msg: str, level: int = 1) -> None:
 	if level < g_verbose:
 		print(AddCol(msg, "cyan"), file=sys.stderr)
 
+
 def ServiceMsg(n: int) -> str:
 	return  str(n) + " service" + ("s" if n > 0 else "")
+
 
 def PrintStdErr(msg: str, col: str) -> None:
 	print(AddCol(msg, col), file=sys.stderr)
@@ -427,7 +430,7 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 			n = len(s)
 			assert n==1 or (n and r < 0)
 			s = AddCol(s, col)
-			s = "[" + (" " if n==1 else "") + s + " ]" 
+			s = " [" + (" " if n==1 else "") + s + " ] " 
 			
 			printsrv = ""
 			
@@ -516,17 +519,23 @@ def main() -> None:
 	parser.add_argument("-f",  "--filter",      default = False,  action="store_true", help="ignore irrelevant services in  'systemctl' mode, default=False\n")
 	parser.add_argument("-x",  "--hideexited",  default = False,  action="store_true", help="hide active but exited services, default=False\n")
 	parser.add_argument("-n",  "--nonthreaded", default = False,  action="store_true", help="do not use threading for speedup, default=False\n")
-	parser.add_argument("-s",  "--systemctl",   default = False,  action="store_true", help="use 'systemctl' command instead of'service' directly, default=False\n")
+	parser.add_argument("-s",  "--systemctl",   default = False,  action="store_true", help="use 'systemctl' command instead of 'service', default=False\n")
 	parser.add_argument("-v",  "--verbose",     default = 0,      action="count",      help="increase output verbosity, default=0\n")
-	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service'/'systemctl', default=False\n")
+	parser.add_argument("--favorite",           default = False,  action="store_true", help=f"use favorite arguments '-b -f -x', default=False\n")
+	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service', default=False\n")
 	parser.add_argument("--initdir",            default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
 	args = parser.parse_args()
-
+	
+	if args.favorite:
+		if args.verbose > 0 and (args.showall or args.debug or args.nocolors or args.nonthreaded or args.systemctl or args.direct or args.initdir != initd):
+			WARN("overriding some arguments with '--favorite' switch..")
+		args = parser.parse_args(["--both", "--filter", "--hideexited"])
+		
 	global g_verbose, g_debug_level, g_addcols
 		
 	g_verbose     = args.verbose
 	g_debug_level = args.debug
-	g_addcols     = not args.nocolors
+	g_addcols     = not args.nocolors 
 	
 	initdir       = args.initdir
 	bothmode      = args.both
