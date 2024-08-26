@@ -9,16 +9,20 @@ Simply call `pservice.py` instead of `service --status-all`
 
 ```
 > pservice.py
- [ + ]  acpid
- [ - ]  alsa-utils
- 
- [..]
- 
- [ + ]  udev
- [ + ]  ufw
+ [ x ]  apparmor
+ [ + ]  bluetooth
+ [ x ]  console-setup.sh
+ [ + ]  cron
+ [ + ]  dbus
+ [ x ]  keyboard-setup.sh
+ [ x ]  kmod
+ [ + ]  lightdm
+ [ x ]  lm-sensors
+ [ x ]  plymouth-log
+ [ x ]  procps
+ [ x ]  ufw
  [ + ]  unattended-upgrades
- [ - ]  uuidd
- [ - ]  x11-common
+ [ x ]  virtualbox
 ```
 
 or if `systemctl list-units --all --type=service` is your prefered service
@@ -27,24 +31,54 @@ services, `pservice` outputs in the same, simple form as the old shell-based
 `service`
 
 ```
-> ./pservice.py -c -s -r
- [ + ]  accounts-daemon
- [ + ]  acpid
+> ./pservice.py -s 
+ [ x ]  apparmor
  [ + ]  bluetooth
-
- [..]
-
+ [ x ]  console-setup.sh
+ 
+ ..
+ 
  [ + ]  systemd-journald
  [ + ]  systemd-logind
+ [ + ]  systemd-machined
+ [ x ]  systemd-modules-load
+ [ x ]  systemd-random-seed
+ [ x ]  systemd-remount-fs
  [ + ]  systemd-resolved
- [ + ]  systemd-timesyncd
- [ + ]  systemd-udevd
+ 
+ ..
+
+ [ + ]  thermald
  [ + ]  udisks2
+ [ x ]  ufw
  [ + ]  unattended-upgrades
  [ + ]  upower
- [ + ]  user@1000
  [ + ]  wpa_supplicant
 ```
+
+Join both systemctl and '/etc/init.d/' services (`-b`), and filter-out active but
+exited services (`-x`), and also remove the large amount of internal systemd
+services (`-f`)
+
+```
+> ./pservice.py -b -f -x -v 
+ [ + ]  bluetooth           (sysv,sysd)
+ [ + ]  cron                (sysv,sysd)
+ [ + ]  dbus                (sysv,sysd)
+ [ + ]  lightdm             (sysv,sysd)
+ [ + ]  NetworkManager      (sysd)
+ [ + ]  polkit              (sysd)
+ [ + ]  snapd               (sysd)
+ [ + ]  thermald            (sysd)
+ [ + ]  udisks2             (sysd)
+ [ + ]  unattended-upgrades (sysv,sysd)
+ [ + ]  upower              (sysd)
+ [ + ]  virtlockd           (sysd)
+ [ + ]  virtlogd            (sysd)
+ [ + ]  vpnagentd           (sysd)
+ [ + ]  wpa_supplicant      (sysd)
+```
+here shown without colors.
 
 # Install
 
@@ -137,36 +171,36 @@ individual via
 service --status-all
 ```
 
-compared to running a status on an individual service. This is due to the
-interpretation of the status of loaded, activated and then exited services,
-that in `pservice` is reported as not running. You can change this behaviour
-in `pservice.py' by changing `c = 1` to `c = 0` in the line
-
-```
-  if v.find("loaded active exited")==0:
-  	c = 1 # change to 0 if active but exited services should be marked as running
-```
-
-In particular the `console-setup.sh` and the `keyboard-setup.sh` produce
-different statuses when being called via `services` or `pservice.py` (see also
-the function ShowDiffs in `demo.sh`)
+There is a difference commando in the file 'demo.sh' that essentially just
+do a diff on the two service-subsystems 
 
 ```
 service --status-all > status_service_all.txt
-pservice             > status_pservice.txt
+pservice.py -a -nc    > status_pservice.txt
 
 diff -dw status_service_all.txt status_pservice.txt
 ``` 
 
-producing the output
+that for my currently running system producing the output
 
 ````
-8c8
+<  [ + ]  alsa-utils
+---
+>  [ - ]  alsa-utils
+4c4
+<  [ + ]  apparmor
+---
+>  [ x ]  apparmor
+6c6
 <  [ - ]  console-setup.sh
 ---
->  [ + ]  console-setup.sh
-18c18
+>  [ x ]  console-setup.sh
+11,12c11,12
 <  [ - ]  keyboard-setup.sh
+<  [ + ]  kmod
 ---
->  [ + ]  keyboard-setup.sh
+>  [ x ]  keyboard-setup.sh
+>  [ x ]  kmod
+...
+
 ```

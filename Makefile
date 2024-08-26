@@ -1,4 +1,5 @@
-PYFILE=./pservice.py
+PYBASE=pservice
+PYFILE=./$(PYBASE).py
 
 test:
 	$(PYFILE) -v -v -b -f -x 
@@ -27,9 +28,18 @@ test_some_combinations:
 	./demo.sh             >/dev/null
 	@ echo OK
 
+strip:
+	@ which strip-hints >/dev/null || (echo "ERROR: missing python package 'strip-hints', install it ala 'pip install strip-hints'.." && false)
+	@ strip-hints --outfile $(PYBASE)_striptypes.py $(PYFILE)
+	@ chmod ugo+x $(PYBASE)_striptypes.py
+	@ $(MAKE) -s PYBASE=$(PYBASE)_striptypes test
+
 lint:
 	mypy --disallow-untyped-defs $(PYFILE) # --strict
 	pylint --jobs 0 --disable=W0311,C0114,C0116,C0103,C0301,C0303 $(PYFILE)
 
 edit:
 	joe $(PYFILE)
+
+clean:
+	@ rm -f $(PYBASE)_striptypes.py

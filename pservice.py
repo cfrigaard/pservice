@@ -2,13 +2,18 @@
 
 # NOTE a parallel service shell
 #   History:
-#     version 0.0: initial
-#     version 0.1: removed external dependencies to local developer files
-#     version 0.2: cleanup, published
-#     version 0.3: cleaned up keyboard Ctrl-C handling
-#     version 0.4: major cleanun and refactoring, introduces types
-#     version 0.5: moved all filtering to FilterServiceResults, elaboreated on 'acive (exited)' status
-#     version 0.7: more cleanup, created _RESULT_STATUS map and remapped service retval
+#     version 0.0: initial.
+#     version 0.1: removed external dependencies to local developer files.
+#     version 0.2: cleanup, published.
+#     version 0.3: cleaned up keyboard Ctrl-C handling.
+#     version 0.4: major cleanun and refactoring, introduces types.
+#     version 0.5: moved all filtering to FilterServiceResults, elaboreated on 'acive (exited)' status.
+#     version 0.7: more cleanup, created _RESULT_STATUS map and remapped service retval.
+#     version 0.8: removed match-case that is only supported in python 3.10 and above, 
+#                    added strip command to Makefile to remove types, that are not supported in 
+#                    earlier python versions,
+#                    elaborated on documentation.
+#     version 0.9: minor fixes, added 'loaded activating' state.
 
 import os
 import sys
@@ -31,6 +36,7 @@ g_verbose     = 0
 _RESULT_STATUS : dict[int,str] = {
 		 0: "loaded active running",
 		 1: "loaded active exited",
+		 2: "loaded activating", # "loaded activating start start Daily apt download activities")
 		-2: "loaded inactive exited",
 		-3: "loaded inactive dead",
 		-4: "not-found inactive dead",
@@ -60,27 +66,26 @@ def AddCol(msg: str, col: str) -> str:
 		COLORS = Colors("\033[0;34m", "\033[1;34m", "\033[0;31m", "\033[1;31m", "\033[0;32m", "\033[1;32m", "\033[0;33m", "\033[1;33m", "\033[0;35m", "\033[1;35m", "\033[0;36m", "\033[1;36m", "\033[0m")
 
 		c = ""
-		match col:
-			case "red":
-				c = COLORS.RED
-			case "lred":
-				c = COLORS.LRED
-			case "green":
-				c = COLORS.GREEN
-			case "lgreen":
-				c = COLORS.LGREEN
-			case "yellow":
-				c =COLORS.YELLOW
-			case "lyellow":
-				c =COLORS.LYELLOW
-			case "purple":
-				c =COLORS.PURPLE
-			case "lpurple":
-				c =COLORS.LPURPLE
-			case "cyan":
-				c =COLORS.CYAN
-			case _:
-				raise ValueError(f"color '{col}' not defined")
+		if col == "red":
+			c = COLORS.RED
+		elif col == "lred":
+			c = COLORS.LRED
+		elif col == "green":
+			c = COLORS.GREEN
+		elif col == "lgreen":
+			c = COLORS.LGREEN
+		elif col == "yellow":
+			c =COLORS.YELLOW
+		elif col == "lyellow":
+			c =COLORS.LYELLOW
+		elif col == "purple":
+			c =COLORS.PURPLE
+		elif col == "lpurple":
+			c =COLORS.LPURPLE
+		elif col == "cyan":
+			c =COLORS.CYAN
+		else:
+			raise ValueError(f"color '{col}' not defined")
 
 		msg = c + msg + COLORS.NOCOLOR
 
@@ -216,7 +221,7 @@ def ServiceResultFactory(servicename: str, output: list[str], retval: int, issys
 def ServiceVStatus(results: list[ServiceResult], index: int, servicename:str, servicemode: int, isthreaded: bool, initd: str) -> None:
 	assert isInstance(index, int) and index >= 0 or index == -1
 	assert isInstance(servicename, str) and len(servicename) > 0
-	assert isInstance(servicemode, int) and 0 <= servicemode <= 1
+	assert isInstance(servicemode, int) and 0 <= servicemode <= 2
 	assert isInstance(isthreaded, bool)
 
 	prefix = "thread" if isthreaded else ""
@@ -319,8 +324,6 @@ def ServiceDStatus() -> list[ServiceResult]:
 	return results
 
 
-
-
 def JoinServiceResults(results_sysv: list[ServiceResult], results_sysd: list[ServiceResult]) -> Mapping[str, list[ServiceResult]]:
 	assert isServiceResultsList(results_sysv, False)
 	assert isServiceResultsList(results_sysd, False)	
@@ -346,6 +349,7 @@ def JoinServiceResults(results_sysv: list[ServiceResult], results_sysd: list[Ser
 	
 	assert isServiceResultsDict(r)
 	return r
+	
 
 def FilterServiceResults(serviceresults : Mapping[str, list[ServiceResult]], filter_out : list[str], hideexited: bool, showall: bool) -> tuple[Mapping[str, list[ServiceResult]], int] :
 	#toprint = (0 in [ri.retval for ri in results[k]]) if printonlyrunning else True	
@@ -410,23 +414,23 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 			assert 0 <= srv <= 4
 
 			s = f"[?{r}?]"
-			match r:
-				case 0:
-					s = "+"
-					col ="lgreen"
-				case 1:
-					s = "x"
-					col = "green"
-				#case 2:
-				#	s = "2"
-				#	col = "lyellow"
-				case -2 | - 3 | -4 | -5 | -6 | -7 | -8:
-					s = "-"
-					col = "red"
-				case _:
-					WARN(f"unhandled return mode for r={r}")
-					col = "yellow"
-					s = str(r)
+			if r == 0:
+				s = "+"
+				col ="lgreen"
+			elif r == 1:
+				s = "x"
+				col = "green"
+			#elif r == 2:
+			#	s = "2"
+			#	col = "lyellow"
+			elif -8 <= r <= -2:
+				s = "-"
+				col = "red"
+			else:
+				WARN(f"unhandled return mode for r={r}")
+				col = "yellow"
+				s = str(r)
+
 			n = len(s)
 			assert n==1 or (n and r < 0)
 			s = AddCol(s, col)
@@ -442,26 +446,24 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 					if g is not None:
 						v = g
 					printretval = ", '" + v + "'"
-				match srv:
-					case 0:
-						printsrv = "sysv"
-					case 1:
-						printsrv = "sysd"		
-					case 2:
-						printsrv = "sysv,sysd"		
-					case 3:
-						printsrv = "sysv"
-						if g_verbose > 1:
-							printsrv += ",ignored sysd"		
-					case 4:
-						printsrv = "sysd"
-						if g_verbose > 1:
-							printsrv += ",ignored sysv"		
-					case _:
-						ERR(f"unhandled srv mode {srv}")
+				if srv == 0:
+					printsrv = "sysv"
+				elif srv == 1:
+					printsrv = "sysd"		
+				elif srv == 2:
+					printsrv = "sysv,sysd"		
+				elif srv == 3:
+					printsrv = "sysv"
+					if g_verbose > 1:
+						printsrv += ",ignored sysd"		
+				elif srv == 4:
+					printsrv = "sysd"
+					if g_verbose > 1:
+						printsrv += ",ignored sysv"		
+				else:
+					ERR(f"unhandled srv mode {srv}")
 				printsrv = " (" + printsrv + printretval + ")"	
 				
-
 			printservicename = servicename.ljust(maxlen if g_verbose > 0 else -1)
 			msg = AddCol(printservicename, col)
 	
@@ -565,7 +567,7 @@ def main() -> None:
 	results_sysv : list[ServiceResult]    = []
 	threads      : list[threading.Thread] = []
 	
-	if servicemode < 2 or bothmode:
+	if servicemode < 3 or bothmode:
 		services = InitFiles(initdir)
 		n        = len(services)
 		subservicemode = 0 if args.direct else 1
