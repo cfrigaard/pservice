@@ -7,13 +7,17 @@
 #     version 0.2: cleanup, published.
 #     version 0.3: cleaned up keyboard Ctrl-C handling.
 #     version 0.4: major cleanun and refactoring, introduces types.
-#     version 0.5: moved all filtering to FilterServiceResults, elaboreated on 'acive (exited)' status.
-#     version 0.7: more cleanup, created _RESULT_STATUS map and remapped service retval.
-#     version 0.8: removed match-case that is only supported in python 3.10 and above, 
-#                    added strip command to Makefile to remove types, that are not supported in 
-#                    earlier python versions,
+#     version 0.5: moved all filtering to FilterServiceResults, elaboreated on 
+#                    'acive (exited)' status.
+#     version 0.7: more cleanup, created _RESULT_STATUS map and remapped 
+#                    service retval.
+#     version 0.8: removed match-case that is only supported in python 3.10 and
+#                    above, added strip command to Makefile to remove types, 
+#                    that are not supported in earlier python versions,
 #                    elaborated on documentation.
 #     version 0.9: minor fixes, added 'loaded activating' state.
+#     version 0.91: minor fixes, handling 'loaded activating' services, and 
+#                   optional '+'/'x' for active but exited services.
 
 import os
 import sys
@@ -34,9 +38,11 @@ g_debug_level = 0
 g_verbose     = 0
 
 _RESULT_STATUS : dict[int,str] = {
-		 0: "loaded active running",
+		 3: "MAX_RESULT",
+		 2: "loaded activating", # "loaded activating start start Daily apt download activities", "loaded activating start start Update the local ESM caches"
 		 1: "loaded active exited",
-		 2: "loaded activating", # "loaded activating start start Daily apt download activities")
+		 0: "loaded active running",
+		-1: "N/A",
 		-2: "loaded inactive exited",
 		-3: "loaded inactive dead",
 		-4: "not-found inactive dead",
@@ -44,8 +50,17 @@ _RESULT_STATUS : dict[int,str] = {
 		-6: "loaded failed",
 		-7: "not-found failed",
 		-8: "sysv inactive/failed",
-		-1: "N/A", 
+		-9: "MIN_RESULT"
 	}
+
+def _GetResult(val):
+	for k, v in _RESULT_STATUS.items():
+		if val==v:
+			return k
+	assert False, f"value '{val}' not found in map"
+
+__MAX_RESULT =  _GetResult("MAX_RESULT")
+__MIN_RESULT =  _GetResult("MIN_RESULT")
 
 ###############################################################################
 
@@ -167,9 +182,9 @@ def isServiceResult(serviceresult: ServiceResult, isinit: bool=False) -> bool:
 		return False
 	if not isInstance(serviceresult.retval, int):
 		return False
-	if serviceresult.retval < -8:
+	if serviceresult.retval <= __MIN_RESULT:
 		return False
-	if serviceresult.retval > 1:
+	if serviceresult.retval >= __MAX_RESULT:
 		return False
 	if not isinit and serviceresult.retval == -1:
 		return False
@@ -180,7 +195,7 @@ def isServiceResult(serviceresult: ServiceResult, isinit: bool=False) -> bool:
 
 def isServiceResultsList(serviceresults: Sequence[ServiceResult], issorted : bool=True) -> bool:
 	if not isInstance(serviceresults, list):
-		return False		
+		return False
 	if issorted:
 		if len(serviceresults) > 2:
 			DBG(f"expected len to be 0, 1 or 2 found {len(serviceresults)}", -1)
@@ -251,7 +266,7 @@ def ServiceVStatus(results: list[ServiceResult], index: int, servicename:str, se
 	assert retval in [0, 3]
 	
 	if retval == 3:
-		retval = -8
+		retval = __MIN_RESULT + 1
 	elif retval == 0:
 		for i in output:
 			if i.find("Active: active (exited) since") > 0:
@@ -259,8 +274,8 @@ def ServiceVStatus(results: list[ServiceResult], index: int, servicename:str, se
 				retval = 1
 				DBG(f"change service '{servicename}'s return value {retval} to 1 due to active but exited service ('{i}')..", 2)
 				break
-		
-	assert retval in [-8, 0, 1], f"retval {retval} is out-of-range"
+	
+	assert retval in [__MIN_RESULT + 1, 0, 1], f"retval {retval} is out-of-range"
 	results[index] = ServiceResultFactory(servicename, output, retval, True)
 
 
@@ -278,7 +293,7 @@ def ServiceDStatus() -> list[ServiceResult]:
 				w = False
 		#print(f"s='{s}'\nr='{r}'")
 		return r
-		
+	
 	def FixServiceStr(s: str) -> str:
 		if len(s) > 2 and ord(s[0]) == 9679 and s[1] == " ":
 			return s[2:]
@@ -303,10 +318,10 @@ def ServiceDStatus() -> list[ServiceResult]:
 		if n > 0:
 			servicename = FixServiceStr(t[:n])
 			v = TrimWhite(t[n+8:])
-			
+	
 			c = -1
 			for key, val in _RESULT_STATUS.items():
-				if key > -8 and v.find(val) == 0:
+				if key > __MIN_RESULT + 1 and v.find(val) == 0:
 					c = key
 					break
 
@@ -318,7 +333,7 @@ def ServiceDStatus() -> list[ServiceResult]:
 			results.append( ServiceResultFactory(servicename, [t], c, False) )
 		else:
 			pass
-			
+	
 	PrintV(f"found {ServiceMsg(len(results))} by calling 'systemctl'..")
 	
 	return results
@@ -326,7 +341,7 @@ def ServiceDStatus() -> list[ServiceResult]:
 
 def JoinServiceResults(results_sysv: list[ServiceResult], results_sysd: list[ServiceResult]) -> Mapping[str, list[ServiceResult]]:
 	assert isServiceResultsList(results_sysv, False)
-	assert isServiceResultsList(results_sysd, False)	
+	assert isServiceResultsList(results_sysd, False)
 
 	r: dict[str, list[ServiceResult]] = {}
 	
@@ -334,7 +349,7 @@ def JoinServiceResults(results_sysv: list[ServiceResult], results_sysd: list[Ser
 		k = ri.servicename
 		assert k not in r
 		r[k] = [ri]
-		
+	
 	for ri in results_sysd:
 		k = ri.servicename
 		if k in r:
@@ -344,7 +359,7 @@ def JoinServiceResults(results_sysv: list[ServiceResult], results_sysd: list[Ser
 
 	for k, v in r.items():
 		assert len(v) <= 2, f"expected max two type of results, got {len(v)} for key '{k}'"
-		if len(v) > 1:	
+		if len(v) > 1:
 			DBG(f"service {k.ljust(48)} in both maps, return values={[rj.retval for rj in v]}")
 	
 	assert isServiceResultsDict(r)
@@ -352,7 +367,7 @@ def JoinServiceResults(results_sysv: list[ServiceResult], results_sysd: list[Ser
 	
 
 def FilterServiceResults(serviceresults : Mapping[str, list[ServiceResult]], filter_out : list[str], hideexited: bool, showall: bool) -> tuple[Mapping[str, list[ServiceResult]], int] :
-	#toprint = (0 in [ri.retval for ri in results[k]]) if printonlyrunning else True	
+	#toprint = (0 in [ri.retval for ri in results[k]]) if printonlyrunning else True
 	#if toprint:
 
 	def FilterServices(s: ServiceResult, filter_out: list[str]) -> bool:
@@ -381,9 +396,9 @@ def FilterServiceResults(serviceresults : Mapping[str, list[ServiceResult]], fil
 		if len(l) > 0:
 			assert k not in r
 			r[k] = l
-			
+	
 	assert isServiceResultsDict(r)
-			
+	
 	return r, services_removed
 
 
@@ -408,22 +423,19 @@ def SortServiceResults(results: Mapping[str, list[ServiceResult]]) -> tuple[list
 	return sorted_keys, maxlen
 
 
-def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
+def PrintServiceResults(results: Mapping[str, list[ServiceResult]], usecross: bool) -> None:
 
-	def PrintServiceResultsSub(servicename: str, r: int, srv: int, maxlen: int) -> None:
+	def PrintServiceResultsSub(servicename: str, r: int, srv: int, maxlen: int, usecross: bool) -> None:
 			assert 0 <= srv <= 4
 
 			s = f"[?{r}?]"
 			if r == 0:
 				s = "+"
 				col ="lgreen"
-			elif r == 1:
-				s = "x"
-				col = "green"
-			#elif r == 2:
-			#	s = "2"
-			#	col = "lyellow"
-			elif -8 <= r <= -2:
+			elif r in [1, 2]:
+				s = "x" if usecross else "+"
+				col = "green" if r == 1 else "yellow"
+			elif __MIN_RESULT < r < -2:
 				s = "-"
 				col = "red"
 			else:
@@ -434,10 +446,10 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 			n = len(s)
 			assert n==1 or (n and r < 0)
 			s = AddCol(s, col)
-			s = " [" + (" " if n==1 else "") + s + " ] " 
-			
+			s = " [" + (" " if n==1 else "") + s + " ] "
+	
 			printsrv = ""
-			
+	
 			if g_verbose > 0:
 				printretval = ""
 				if g_verbose > 1:
@@ -449,27 +461,27 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 				if srv == 0:
 					printsrv = "sysv"
 				elif srv == 1:
-					printsrv = "sysd"		
+					printsrv = "sysd"
 				elif srv == 2:
-					printsrv = "sysv,sysd"		
+					printsrv = "sysv,sysd"
 				elif srv == 3:
 					printsrv = "sysv"
 					if g_verbose > 1:
-						printsrv += ",ignored sysd"		
+						printsrv += ",ignored sysd"
 				elif srv == 4:
 					printsrv = "sysd"
 					if g_verbose > 1:
-						printsrv += ",ignored sysv"		
+						printsrv += ",ignored sysv"
 				else:
 					ERR(f"unhandled srv mode {srv}")
-				printsrv = " (" + printsrv + printretval + ")"	
-				
+				printsrv = " (" + printsrv + printretval + ")"
+	
 			printservicename = servicename.ljust(maxlen if g_verbose > 0 else -1)
 			msg = AddCol(printservicename, col)
 	
 			if g_verbose > 0:
-				msg += AddCol(printsrv, "purple") 
-		
+				msg += AddCol(printsrv, "purple")
+	
 			print(f"{s} {msg}")
 
 	sorted_keys, maxlen = SortServiceResults(results)
@@ -477,33 +489,33 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]]) -> None:
 	for k in sorted_keys:
 		v = results[k]
 		n = len(v)
-		assert 1 <= n <= 2 
-		
+		assert 1 <= n <= 2
+	
 		for i in range(n):
 			ri = v[i]
-			
+	
 			assert k == ri.servicename
 			assert (n == 1) or ((i==0 and ri.issysv) or (i==1 and not ri.issysv)), "implicit sorting in sublist, sysv then sysd"
-			
+	
 			srv = 0 if ri.issysv else 1
-			
+	
 			DBG(f"i={i}, servicename='{ri.servicename}',  r={ri.retval}", 2)
 			if i+1 < n:
 				rj = v[i+1]
 				if rj.servicename == ri.servicename:
 					assert ri.issysv != rj.issysv
 					assert ri.issysv and not rj.issysv
-			
+	
 					retval_sysv = ri.retval
-					retval_sysd = rj.retval 
-			
+					retval_sysd = rj.retval
+	
 					if retval_sysv == retval_sysd:
 						DBG(f"i={i}: skipping print of service '{ri.servicename}' with similar return values {ri.retval}/{rj.retval} ", 2)
 						srv = 2
 					elif g_verbose > 2:
 						WARN(f"services does not agree on return value of '{rj.servicename}, return values are {ri.retval}(sysv)/{rj.retval}(sysd)")
-			
-			PrintServiceResultsSub(ri.servicename, ri.retval, srv, maxlen)
+	
+			PrintServiceResultsSub(ri.servicename, ri.retval, srv, maxlen, usecross)
 	
 			if srv >= 2:
 				DBG(f"break srv={srv}", 4)
@@ -516,14 +528,15 @@ def main() -> None:
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-a",  "--showall",     default = False,  action="store_true", help="show all services, both active and inactive, default=False\n")
 	parser.add_argument("-b",  "--both",        default = False,  action="store_true", help="show both sysv and systemd services, default=False\n")
+	parser.add_argument("-c",  "--usecross",    default = False,  action="store_true", help="use 'x' instead of '+' for running but exited services, default=False\n")
 	parser.add_argument("-d",  "--debug",       default = False,  action="store_true", help="debug print default=False\n")
-	parser.add_argument("-nc", "--nocolors",    default = False,  action="store_true", help="disable print with colors, default=False\n")
 	parser.add_argument("-f",  "--filter",      default = False,  action="store_true", help="ignore irrelevant services in  'systemctl' mode, default=False\n")
-	parser.add_argument("-x",  "--hideexited",  default = False,  action="store_true", help="hide active but exited services, default=False\n")
 	parser.add_argument("-n",  "--nonthreaded", default = False,  action="store_true", help="do not use threading for speedup, default=False\n")
+	parser.add_argument("-nc", "--nocolors",    default = False,  action="store_true", help="disable print with colors, default=False\n")
 	parser.add_argument("-s",  "--systemctl",   default = False,  action="store_true", help="use 'systemctl' command instead of 'service', default=False\n")
 	parser.add_argument("-v",  "--verbose",     default = 0,      action="count",      help="increase output verbosity, default=0\n")
-	parser.add_argument("--favorite",           default = False,  action="store_true", help=f"use favorite arguments '-b -f -x', default=False\n")
+	parser.add_argument("-x",  "--hideexited",  default = False,  action="store_true", help="hide active but exited services, default=False\n")
+	parser.add_argument("--favorite",           default = False,  action="store_true", help=f"use favorite arguments '-b -c -f -x', default=False\n")
 	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service', default=False\n")
 	parser.add_argument("--initdir",            default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
 	args = parser.parse_args()
@@ -531,13 +544,13 @@ def main() -> None:
 	if args.favorite:
 		if args.verbose > 0 and (args.showall or args.debug or args.nocolors or args.nonthreaded or args.systemctl or args.direct or args.initdir != initd):
 			WARN("overriding some arguments with '--favorite' switch..")
-		args = parser.parse_args(["--both", "--filter", "--hideexited"])
-		
+		args = parser.parse_args(["--both", "--usecross", "--filter", "--hideexited"])
+	
 	global g_verbose, g_debug_level, g_addcols
-		
+	
 	g_verbose     = args.verbose
 	g_debug_level = args.debug
-	g_addcols     = not args.nocolors 
+	g_addcols     = not args.nocolors
 	
 	initdir       = args.initdir
 	bothmode      = args.both
@@ -571,7 +584,7 @@ def main() -> None:
 		services = InitFiles(initdir)
 		n        = len(services)
 		subservicemode = 0 if args.direct else 1
-		
+	
 		if n<=0:
 			WARN(f"no files in init dir '{initdir}'")
 
@@ -607,7 +620,7 @@ def main() -> None:
 	assert services_found <=  len(results) + services_filtered
 	PrintV(f"found total {ServiceMsg(services_found)}, merged {ServiceMsg(len(results))} and filtered out {services_filtered} services..")
 	
-	PrintServiceResults(results)
+	PrintServiceResults(results, args.usecross)
 
 
 if __name__ == '__main__':
