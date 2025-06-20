@@ -42,4 +42,4 @@ edit:
 	joe $(PYFILE)
 
 clean:
-	@ rm -f $(PYBASE)_striptypes.py
+	@ rm -f $(PYBASE)_striptypes.py status_*ser*.txt

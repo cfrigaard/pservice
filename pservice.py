@@ -53,7 +53,7 @@ _RESULT_STATUS : dict[int,str] = {
 		-9: "MIN_RESULT"
 	}
 
-def _GetResult(val):
+def _GetResult(val: str) -> int:
 	for k, v in _RESULT_STATUS.items():
 		if val==v:
 			return k
@@ -536,7 +536,7 @@ def main() -> None:
 	parser.add_argument("-s",  "--systemctl",   default = False,  action="store_true", help="use 'systemctl' command instead of 'service', default=False\n")
 	parser.add_argument("-v",  "--verbose",     default = 0,      action="count",      help="increase output verbosity, default=0\n")
 	parser.add_argument("-x",  "--hideexited",  default = False,  action="store_true", help="hide active but exited services, default=False\n")
-	parser.add_argument("--favorite",           default = False,  action="store_true", help=f"use favorite arguments '-b -c -f -x', default=False\n")
+	parser.add_argument("--favorite",           default = False,  action="store_true", help="use favorite arguments '-b -c -f -x', default=False\n")
 	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service', default=False\n")
 	parser.add_argument("--initdir",            default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
 	args = parser.parse_args()
@@ -631,3 +631,4 @@ if __name__ == '__main__':
 	except Exception as e:
 		WARN(f"exception occured, '{e}' ({str(type(e)).replace('<class ','').replace('>','')})")
 		raise e
+
