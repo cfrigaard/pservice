@@ -2,7 +2,7 @@ PYBASE=pservice
 PYFILE=./$(PYBASE).py
 
 test:
-	$(PYFILE) -v -v -b -f -x 
+	$(PYFILE) -v -v -b -f -x -dep
 			
 test_some_combinations:
 	@# NOTE: perhaps a generator would be better

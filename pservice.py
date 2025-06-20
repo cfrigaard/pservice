@@ -33,9 +33,9 @@ from typing import Any, Mapping, NoReturn, Sequence # Iterable,  MutableMapping
 
 ServiceResult = namedtuple("ServiceResult", "servicename output retval issysv")
 
-g_addcols = False
-g_debug_level = 0
-g_verbose     = 0
+g_addcols: bool = False
+g_debug_level: int = 0
+g_verbose: int     = 0
 
 _RESULT_STATUS : dict[int,str] = {
 		 3: "MAX_RESULT",
@@ -423,66 +423,115 @@ def SortServiceResults(results: Mapping[str, list[ServiceResult]]) -> tuple[list
 	return sorted_keys, maxlen
 
 
+def DepedenciesAnalysis(results: Mapping[str, list[ServiceResult]]) -> None:
+	def MkDepedency(servicename: str) -> None:		
+		if servicename in deps.keys():
+			return
+			
+		#print(f"DEP: {servicename}..")
+		cmd: str = f"systemctl list-dependencies {servicename}"
+		output, retval = SysCallPrimitive(cmd)
+		
+		d: list[str] = []
+		for i in output:
+			t = i.find("├─")
+			if t>=0:
+				s = i[t+2:]
+				d.append(s)
+
+		deps[servicename] = sorted(d) # gives type error?
+		
+		for i in d:
+			MkDepedency(i)
+
+	print("DEP ANALYSIS..")
+	deps : Mapping[str, list[str]]= {}
+	
+	for s in results.keys():
+		MkDepedency(s)
+
+	d = {}
+	for s in results.keys():
+		f = 0
+		for k, v in deps.items():
+			#print(f"{k}")
+			if k!=s:
+				for i in v:
+					#print(f"\t{i}")
+					if i==s:
+						#print(f"service '{i}' demands '{s}'..") 
+						f += 1
+		
+		#print(f"{f:2d} dependencies for service '{s}'")
+		#assert s not in d.keys()
+		d[s] = f
+		
+	for s in sorted(results.keys()):
+		assert s in d.keys()
+		f = d[s]
+		if i[1]:
+			print(f"{f:2d} dependencies for service '{s}'")
+
 def PrintServiceResults(results: Mapping[str, list[ServiceResult]], usecross: bool) -> None:
 
 	def PrintServiceResultsSub(servicename: str, r: int, srv: int, maxlen: int, usecross: bool) -> None:
-			assert 0 <= srv <= 4
+		assert 0 <= srv <= 4
 
-			s = f"[?{r}?]"
-			if r == 0:
-				s = "+"
-				col ="lgreen"
-			elif r in [1, 2]:
-				s = "x" if usecross else "+"
-				col = "green" if r == 1 else "yellow"
-			elif __MIN_RESULT < r < -2:
-				s = "-"
-				col = "red"
-			else:
-				WARN(f"unhandled return mode for r={r}")
-				col = "yellow"
-				s = str(r)
+		s = f"[?{r}?]"
+		if r == 0:
+			s = "+"
+			col ="lgreen"
+		elif r in [1, 2]:
+			s = "x" if usecross else "+"
+			col = "green" if r == 1 else "yellow"
+		elif __MIN_RESULT < r < -2:
+			s = "-"
+			col = "red"
+		else:
+			WARN(f"unhandled return mode for r={r}")
+			col = "yellow"
+			s = str(r)
 
-			n = len(s)
-			assert n==1 or (n and r < 0)
-			s = AddCol(s, col)
-			s = " [" + (" " if n==1 else "") + s + " ] "
-	
-			printsrv = ""
-	
-			if g_verbose > 0:
-				printretval = ""
+		n = len(s)
+		assert n==1 or (n and r < 0)
+		s = AddCol(s, col)
+		s = " [" + (" " if n==1 else "") + s + " ] "
+
+		printsrv = ""
+
+		if g_verbose > 0:
+			printretval = ""
+			if g_verbose > 1:
+				v = f" 'unknown' ({r})"
+				g =_RESULT_STATUS.get(r)
+				if g is not None:
+					v = g
+				printretval = ", '" + v + "'"
+			if srv == 0:
+				printsrv = "sysv"
+			elif srv == 1:
+				printsrv = "sysd"
+			elif srv == 2:
+				printsrv = "sysv,sysd"
+			elif srv == 3:
+				printsrv = "sysv"
 				if g_verbose > 1:
-					v = f" 'unknown' ({r})"
-					g =_RESULT_STATUS.get(r)
-					if g is not None:
-						v = g
-					printretval = ", '" + v + "'"
-				if srv == 0:
-					printsrv = "sysv"
-				elif srv == 1:
-					printsrv = "sysd"
-				elif srv == 2:
-					printsrv = "sysv,sysd"
-				elif srv == 3:
-					printsrv = "sysv"
-					if g_verbose > 1:
-						printsrv += ",ignored sysd"
-				elif srv == 4:
-					printsrv = "sysd"
-					if g_verbose > 1:
-						printsrv += ",ignored sysv"
-				else:
-					ERR(f"unhandled srv mode {srv}")
-				printsrv = " (" + printsrv + printretval + ")"
-	
-			printservicename = servicename.ljust(maxlen if g_verbose > 0 else -1)
-			msg = AddCol(printservicename, col)
-	
-			if g_verbose > 0:
-				msg += AddCol(printsrv, "purple")
-	
-			print(f"{s} {msg}")
+					printsrv += ",ignored sysd"
+			elif srv == 4:
+				printsrv = "sysd"
+				if g_verbose > 1:
+					printsrv += ",ignored sysv"
+			else:
+				ERR(f"unhandled srv mode {srv}")
+			printsrv = " (" + printsrv + printretval + ")"
+
+		printservicename = servicename.ljust(maxlen if g_verbose > 0 else -1)
+		msg = AddCol(printservicename, col)
+
+		if g_verbose > 0:
+			msg += AddCol(printsrv, "purple")
+			
+		print(f"{s} {msg}")
 
 	sorted_keys, maxlen = SortServiceResults(results)
 
@@ -516,11 +565,11 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]], usecross: bo
 						WARN(f"services does not agree on return value of '{rj.servicename}, return values are {ri.retval}(sysv)/{rj.retval}(sysd)")
 	
 			PrintServiceResultsSub(ri.servicename, ri.retval, srv, maxlen, usecross)
-	
 			if srv >= 2:
 				DBG(f"break srv={srv}", 4)
 				break
-
+	
+	
 ###############################################################################
 
 def main() -> None:
@@ -536,6 +585,7 @@ def main() -> None:
 	parser.add_argument("-s",  "--systemctl",   default = False,  action="store_true", help="use 'systemctl' command instead of 'service', default=False\n")
 	parser.add_argument("-v",  "--verbose",     default = 0,      action="count",      help="increase output verbosity, default=0\n")
 	parser.add_argument("-x",  "--hideexited",  default = False,  action="store_true", help="hide active but exited services, default=False\n")
+	parser.add_argument("-dep","--dependencies",default = False,  action="store_true", help="make service dependencies analysis', default=False\n")
 	parser.add_argument("--favorite",           default = False,  action="store_true", help="use favorite arguments '-b -c -f -x', default=False\n")
 	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service', default=False\n")
 	parser.add_argument("--initdir",            default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
@@ -612,7 +662,7 @@ def main() -> None:
 
 	# Join sysv and sysd results if needed..
 	results = JoinServiceResults(results_sysv, results_sysd)
-
+	
 	# Final filtering of services..
 	services_found = len(results)
 	results, services_filtered = FilterServiceResults(results, filterout, args.hideexited, args.showall)
@@ -621,7 +671,9 @@ def main() -> None:
 	PrintV(f"found total {ServiceMsg(services_found)}, merged {ServiceMsg(len(results))} and filtered out {services_filtered} services..")
 	
 	PrintServiceResults(results, args.usecross)
-
+	if args.dependencies: 
+		DepedenciesAnalysis(results)
+	
 
 if __name__ == '__main__':
 	try:
