@@ -18,6 +18,10 @@
 #     version 0.9: minor fixes, added 'loaded activating' state.
 #     version 0.91: minor fixes, handling 'loaded activating' services, and 
 #                   optional '+'/'x' for active but exited services.
+#     version 0.92: minor fixes, handling various results permutation ala 
+#                   'error inactive dead': the direct stirng lookup must be c
+#                   changed to a keywork to bin lookup instead for a permanent fix. 
+VERSION = "0.92"
 
 import os
 import sys
@@ -31,7 +35,8 @@ from typing import Any, Mapping, NoReturn, Sequence # Iterable,  MutableMapping
 
 ###############################################################################
 
-ServiceResult = namedtuple("ServiceResult", "servicename output retval issysv")
+
+ServiceResult = namedtuple("ServiceResult", "servicename output retval binstate issysv")
 
 g_addcols: bool = False
 g_debug_level: int = 0
@@ -47,13 +52,53 @@ _RESULT_STATUS : dict[int,str] = {
 		-3: "loaded inactive dead",
 		-4: "not-found inactive dead",
 		-5: "masked inactive dead",
-		-6: "loaded failed",
-		-7: "not-found failed",
-		-8: "sysv inactive/failed",
-		-9: "MIN_RESULT"
+		-6: "error inactive dead",
+		-7: "loaded failed",
+		-8: "not-found failed",
+		-9: "sysv inactive/failed",
+		-10: "error",
+		-11: "MIN_RESULT"
 	}
 
+_RESULT_STATUS_BIN : dict[str,list[str]] = {
+		"mode" : [("loaded", 1), ("masked", 2), ("not-found",4), ("error", 8)], 
+		"state": [("active", 16), ("activating", 32), ("inactive", 64)],
+		"status":[("running", 128), ("exited", 256), ("failed", 512), ("dead", 1024)]
+	}
+
+def _GetResultBin(val: str):
+	def _lookup(key:str, val: str):
+		l = _RESULT_STATUS_BIN[key]
+		for i in l:
+			if i[0]==val:
+				return i
+		return None
+	
+	if val in ["MIN_RESULT", "MAX_RESULT"]:
+		return -1
+	
+	t = val.split(" ")
+	assert len(t)>3
+	mode = _lookup("mode",t[0])
+	state = _lookup("state", t[1])
+	status = _lookup("status", t[2])
+	
+	r = t[0] + " " + t[1] + " " + t[2]
+	assert val.find(r)==0, f"could not find string '{r}' at pos 0 in val='{val}'" 
+	s = " ".join(t[3:])
+	r = r + " " + s
+	assert val==r, f"val='{val}' not equal to '{r}'"
+	
+	curr = mode[1] + state[1] + status[1]
+	r = f"_GetResultBin: mode={mode[1]:2d}, state={state[1]:4d}, status={status[1]:5d} -> {curr:5d}: {s}"	
+		
+	DBG(r, 2)
+	assert curr>=0
+	return curr
+
 def _GetResult(val: str) -> int:
+	#if val.find("error")>=0:
+	#	return -9
 	for k, v in _RESULT_STATUS.items():
 		if val==v:
 			return k
@@ -175,20 +220,34 @@ def SysCallPrimitive(cmd: str, quiet: bool=True, checkretval: bool=False) -> tup
 
 def isServiceResult(serviceresult: ServiceResult, isinit: bool=False) -> bool:
 	if not isinstance(serviceresult, ServiceResult):
+		WARN("input parameter is not a ServiceResult type")
 		return False
 	if len(serviceresult.servicename) == 0:
+		WARN("serviceresult.servicename is empty")
 		return False
 	if not isInstance(serviceresult.output, list):
+		WARN("result.output is not a list")
 		return False
 	if not isInstance(serviceresult.retval, int):
+		WARN("result is not int")
 		return False
 	if serviceresult.retval <= __MIN_RESULT:
+		WARN("result is <= __MIN_RESULT")
 		return False
 	if serviceresult.retval >= __MAX_RESULT:
+		WARN("result is >= __MAX_RESULT")
 		return False
 	if not isinit and serviceresult.retval == -1:
+		WARN(f"isinit={isinit} and serviceresult.retval={serviceresult.retval} == -1")
+		return False
+	if isinit and serviceresult.binstate < -3:
+		WARN(f"serviceresult.binstate={serviceresult.binstate} < -3")
+		return False
+	if not isinit and serviceresult.binstate < -2:
+		WARN(f"isinit={isinit} and serviceresult.binstate={serviceresult.binstate} < -2")
 		return False
 	if not isInstance(serviceresult.issysv, bool):
+		WARN("serviceresult.issysv is not a bool type") 
 		return False
 	return True
 
@@ -226,9 +285,11 @@ def isServiceResultsDict(serviceresults: Mapping[str, Sequence[ServiceResult]]) 
 	return True
 
 
-def ServiceResultFactory(servicename: str, output: list[str], retval: int, issysv: bool, isinit: bool=False) -> ServiceResult:
+def ServiceResultFactory(servicename: str, output: list[str], retval: int, binstate: int, issysv: bool, isinit: bool=False) -> ServiceResult:
 	assert len(servicename) > 0
-	s = ServiceResult(servicename, output, retval, issysv)
+	s = ServiceResult(servicename, output, retval, binstate, issysv)
+	if not isServiceResult(s, isinit):
+		print(f"s.retval={s.retval},  servicename={servicename}, output={output}, reval={retval}, binstate={binstate}, issysv={issysv}, isinint={isinit}")
 	assert isServiceResult(s, isinit)
 	return s
 
@@ -276,7 +337,7 @@ def ServiceVStatus(results: list[ServiceResult], index: int, servicename:str, se
 				break
 	
 	assert retval in [__MIN_RESULT + 1, 0, 1], f"retval {retval} is out-of-range"
-	results[index] = ServiceResultFactory(servicename, output, retval, True)
+	results[index] = ServiceResultFactory(servicename, output, retval, -2, True)
 
 
 def ServiceDStatus() -> list[ServiceResult]:
@@ -315,9 +376,11 @@ def ServiceDStatus() -> list[ServiceResult]:
 		assert isInstance(i, str)
 		t = i.replace("\n","").strip()
 		n = t.find(".service")
+
 		if n > 0:
 			servicename = FixServiceStr(t[:n])
 			v = TrimWhite(t[n+8:])
+			r = _GetResultBin(v)
 	
 			c = -1
 			for key, val in _RESULT_STATUS.items():
@@ -328,9 +391,9 @@ def ServiceDStatus() -> list[ServiceResult]:
 			if c == -1:
 				WARN(f"unexpected systemctl status '{v}'")
 
-			DBG(f"servicename={(servicename+',').ljust(48)} c={c},  v={v},  t={t}", 1)
+			DBG(f"servicename={(servicename+", ").ljust(48)} r={r:5d}, c={c:2d}", 2)
 
-			results.append( ServiceResultFactory(servicename, [t], c, False) )
+			results.append( ServiceResultFactory(servicename, [t], c, r, False) )
 		else:
 			pass
 	
@@ -573,6 +636,12 @@ def PrintServiceResults(results: Mapping[str, list[ServiceResult]], usecross: bo
 ###############################################################################
 
 def main() -> None:
+
+	#def Usage():
+	#	print(parser.format_help())
+	#	print(f"  VERSION: {VERSION}")
+	#	exit(0)
+
 	initd = "/etc/init.d"
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-a",  "--showall",     default = False,  action="store_true", help="show all services, both active and inactive, default=False\n")
@@ -589,6 +658,7 @@ def main() -> None:
 	parser.add_argument("--favorite",           default = False,  action="store_true", help="use favorite arguments '-b -c -f -x', default=False\n")
 	parser.add_argument("--direct",             default = False,  action="store_true", help=f"call '{initd}' directly instead of using 'service', default=False\n")
 	parser.add_argument("--initdir",            default = initd,  type=str,            help=f"init dir to scan, default='{initd}'\n")
+	parser.add_argument("--version",            action="version", version=VERSION,     help=f"show version ({VERSION})\n")
 	args = parser.parse_args()
 	
 	if args.favorite:
@@ -639,7 +709,7 @@ def main() -> None:
 			WARN(f"no files in init dir '{initdir}'")
 
 		for i in range(n):
-			results_sysv.append(ServiceResultFactory("N/A", [], -1, True, True))
+			results_sysv.append(ServiceResultFactory("N/A", [], -1, -2, True, True))
 
 			if args.nonthreaded:
 				ServiceVStatus(                                   results_sysv, i, services[i], subservicemode, False, initd)
@@ -679,8 +749,7 @@ if __name__ == '__main__':
 	try:
 		main()
 	except KeyboardInterrupt as _:
-		ERR("interrupted by keyboard Ctld-C, aborted")
+		ERR("interrupted by keyboard Ctrl-C, aborted")
 	except Exception as e:
 		WARN(f"exception occured, '{e}' ({str(type(e)).replace('<class ','').replace('>','')})")
 		raise e
-
